@@ -21,7 +21,7 @@ Pin the action to a full commit SHA. The `version` input selects the amivuln rel
 
 ## Inputs
 
-- `version`: amivuln release without the leading `v`. Default: the release this action was tested with.
+- `version`: amivuln release without the leading `v`. Default: `0.0.9`.
 - `args`: arguments for amivuln, split on whitespace. Default: `--all --fail-on high`.
 - `github-token`: token used to download the release and verify the attestation. Default: `github.token`.
 
