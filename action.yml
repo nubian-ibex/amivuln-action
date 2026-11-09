@@ -1,0 +1,66 @@
+name: amivuln
+description: Run amivuln on the runner after verifying the release attestation and checksum.
+author: nubian-ibex
+branding:
+  icon: shield
+  color: green
+inputs:
+  version:
+    description: amivuln release to run, without the leading v.
+    required: false
+    default: "0.0.7"
+  args:
+    description: Arguments passed to amivuln, split on whitespace.
+    required: false
+    default: "--all --fail-on high"
+  github-token:
+    description: Token used to download the release and verify its attestation.
+    required: false
+    default: ${{ github.token }}
+outputs:
+  exit-code:
+    description: Exit code of amivuln.
+    value: ${{ steps.run.outputs.exit-code }}
+runs:
+  using: composite
+  steps:
+    - name: Download and verify amivuln
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        case "$VERSION" in
+          *[!0-9A-Za-z.+-]*|"") echo "invalid version: $VERSION" >&2; exit 64 ;;
+        esac
+        case "$(uname -m)" in
+          x86_64) arch=x86_64 ;;
+          aarch64|arm64) arch=aarch64 ;;
+          *) echo "unsupported architecture: $(uname -m)" >&2; exit 64 ;;
+        esac
+        name="amivuln-${arch}-unknown-linux-musl.tar.zst"
+        dir="${RUNNER_TEMP}/amivuln-${VERSION}"
+        rm -rf "$dir"
+        mkdir -p "$dir"
+        gh release download "v${VERSION}" --repo nubian-ibex/amivuln \
+          --dir "$dir" --pattern "$name" --pattern "${name}.sha256"
+        # Verify provenance before the archive is unpacked or executed.
+        gh attestation verify "${dir}/${name}" --repo nubian-ibex/amivuln \
+          --signer-workflow nubian-ibex/amivuln/.github/workflows/release.yml
+        (cd "$dir" && sha256sum --check "${name}.sha256")
+        tar --zstd -xf "${dir}/${name}" -C "$dir" --strip-components=1 \
+          "${name%.tar.zst}/amivuln"
+        echo "AMIVULN_BIN=${dir}/amivuln" >> "$GITHUB_ENV"
+    - name: Run amivuln
+      id: run
+      shell: bash
+      env:
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -uo pipefail
+        read -r -a argv <<< "$ARGS"
+        "$AMIVULN_BIN" "${argv[@]}"
+        code=$?
+        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+        exit "$code"
